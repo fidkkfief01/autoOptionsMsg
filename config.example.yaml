@@ -1,0 +1,24 @@
+interval_seconds: 300
+notify_on_start: true
+
+# alpaca | yfinance | manual
+provider: alpaca
+price_field: mid
+alpaca_feed: indicative
+default_underlying: QQQ
+
+telegram:
+  bot_token: ${TG_BOT_TOKEN}
+  chat_id: ${TG_CHAT_ID}
+
+portfolios:
+  - name: "SPY 示例（请改成你的组合）"
+    multiplier: 100
+    legs:
+      - underlying: SPY
+        expiry: "2026-05-28"
+        strike: 500
+        option_type: call
+        side: long
+        quantity: 1
+        entry_price: 10.00
