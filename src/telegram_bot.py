@@ -7,6 +7,7 @@ import httpx
 
 from src.env_keys import telegram_bot_token, telegram_chat_id
 from src.query_service import SpreadQueryService
+from src.telegram_notifier import QUERY_COMBO_CALLBACK
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +29,19 @@ REPLY_KEYBOARD = {
 
 HELP_TEXT = (
     "📖 <b>输入格式</b>\n\n"
-    "<code>标的 +腿1, 腿2, 到期天数</code>\n\n"
+    "<code>标的 +腿1, 腿2, 到期天数</code>\n"
+    "<code>标的 +腿1,腿1到期天数,+腿2,腿2到期天数</code>\n\n"
     "<b>腿格式</b>\n"
     "• <code>+1 730C</code> — 买入 1 张 730 看涨\n"
     "• <code>-1 750C</code> — 卖出 1 张 750 看涨\n"
     "• <code>+2 400P</code> — 买入 2 张 400 看跌\n\n"
     "<b>到期</b>\n"
-    "• <code>60天</code> / <code>60d</code> / <code>60D</code>\n\n"
+    "• <code>60天</code> / <code>60d</code> / <code>60D</code>\n"
+    "• 可放在最后，表示所有腿同一到期\n"
+    "• 也可跟在每条腿后，支持不同到期日组合\n\n"
     "<b>完整示例</b>\n"
     "<code>QQQ +1 730C, -1 750C, 60天</code>\n"
+    "<code>QQQ +1 730C,59天,-1 750C,307天</code>\n"
     "<code>+1 740C, -1 760C, 45d</code>\n\n"
     "标的可省略，默认 <code>QQQ</code>。"
 )
@@ -44,6 +49,7 @@ HELP_TEXT = (
 EXAMPLE_TEXT = (
     "📝 <b>复制以下任一示例发送即可</b>\n\n"
     "<code>QQQ +1 730C, -1 750C, 60天</code>\n"
+    "<code>QQQ +1 730C,59天,-1 750C,307天</code>\n"
     "<code>SPY +1 580C, -1 600C, 45d</code>\n"
     "<code>+1 740C, -1 760C, 60天</code>"
 )
@@ -51,7 +57,8 @@ EXAMPLE_TEXT = (
 QUERY_PROMPT = (
     "📊 <b>请发送价差指令</b>\n\n"
     "例如：\n"
-    "<code>QQQ +1 730C, -1 750C, 60天</code>"
+    "<code>QQQ +1 730C, -1 750C, 60天</code>\n"
+    "<code>QQQ +1 730C,59天,-1 750C,307天</code>"
 )
 
 
@@ -96,10 +103,36 @@ class TelegramBotRunner:
 
         for update in updates:
             self._offset = update["update_id"] + 1
+            callback = update.get("callback_query")
+            if callback:
+                self._handle_callback(callback)
+                continue
             message = update.get("message") or update.get("edited_message")
             if not message:
                 continue
             self._handle_message(message)
+
+    def _handle_callback(self, callback: dict) -> None:
+        chat_id = str(callback.get("message", {}).get("chat", {}).get("id", ""))
+        callback_id = callback.get("id")
+        if callback_id:
+            self._answer_callback(callback_id)
+
+        if self.allowed_chat and chat_id != self.allowed_chat:
+            logger.warning("忽略未授权 callback chat_id=%s", chat_id)
+            return
+
+        data = callback.get("data")
+        if data == QUERY_COMBO_CALLBACK and chat_id:
+            self._send_to_chat(HELP_TEXT, chat_id=chat_id, keyboard=REPLY_KEYBOARD)
+
+    def _answer_callback(self, callback_id: str) -> None:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(
+                f"{self.api}/answerCallbackQuery",
+                json={"callback_query_id": callback_id},
+            )
+            response.raise_for_status()
 
     def _handle_message(self, message: dict) -> None:
         chat_id = str(message["chat"]["id"])

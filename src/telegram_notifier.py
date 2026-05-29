@@ -28,6 +28,13 @@ _FEED_SHORT = {
     "opra": "Alpaca OPRA 实时",
 }
 
+QUERY_COMBO_CALLBACK = "query_combo_help"
+QUERY_COMBO_INLINE_KEYBOARD = {
+    "inline_keyboard": [
+        [{"text": "查询期权组合", "callback_data": QUERY_COMBO_CALLBACK}],
+    ]
+}
+
 
 @dataclass(frozen=True)
 class NotifyContext:
@@ -56,7 +63,7 @@ class TelegramNotifier:
         self.chat_id = chat_id
         self._api_base = f"https://api.telegram.org/bot{bot_token}"
 
-    def send_message(self, text: str) -> None:
+    def send_message(self, text: str, reply_markup: dict | None = None) -> None:
         if not self.bot_token or not self.chat_id:
             raise ValueError("未配置 TG_BOT_TOKEN / TG_CHAT_ID，无法发送 Telegram 通知")
 
@@ -66,6 +73,7 @@ class TelegramNotifier:
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
+            "reply_markup": reply_markup or QUERY_COMBO_INLINE_KEYBOARD,
         }
         with httpx.Client(timeout=30.0) as client:
             response = client.post(url, json=payload)
@@ -96,7 +104,8 @@ class TelegramNotifier:
         underlying_prices: dict[str, float] | None = None,
     ) -> None:
         self.send_message(
-            self.format_snapshots(snapshots, ctx=ctx, underlying_prices=underlying_prices)
+            self.format_snapshots(snapshots, ctx=ctx, underlying_prices=underlying_prices),
+            reply_markup=QUERY_COMBO_INLINE_KEYBOARD,
         )
 
 

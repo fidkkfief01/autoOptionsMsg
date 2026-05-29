@@ -148,7 +148,8 @@ try:
     
     print(f"标的: {parsed.underlying}")
     print(f"腿数: {len(parsed.legs)}")
-    print(f"目标 DTE: {parsed.target_dte}")
+    print(f"全局 DTE: {parsed.target_dte}")  # 不同到期日组合时为 None
+    print(f"每腿 DTE: {parsed.leg_dtes}")
     
     for leg in parsed.legs:
         print(f"  {leg.side.value:5} {leg.quantity} {leg.strike} {leg.option_type.value}")
@@ -383,6 +384,7 @@ Endpoint=https://paper-trading.alpaca.markets
 
 ```
 <标的> <腿1>, <腿2>, ..., <到期天数>
+<标的> <腿1>,<腿1到期天数>,<腿2>,<腿2到期天数>
 ```
 
 ### 腿格式详解
@@ -401,6 +403,7 @@ Endpoint=https://paper-trading.alpaca.markets
 | 输入 | 说明 |
 |------|------|
 | `QQQ +1 730C, -1 750C, 60天` | QQQ 牛市看涨价差，60 DTE |
+| `QQQ +1 730C,59天,-1 750C,307天` | QQQ 不同到期日组成的组合 |
 | `SPY +1 500C, -1 520C, 45d` | SPY 熊市看涨价差，45 DTE |
 | `-1 400P, +1 380P, 60天` | 省略标的用默认值，看跌价差 |
 | `+1 500C, 60天` | 单腿：买 500 看涨 |
@@ -414,6 +417,8 @@ Endpoint=https://paper-trading.alpaca.markets
 60D    ✓ 可用
 2026-06-26    ✗ 暂不支持（使用 DTE 代替）
 ```
+
+到期天数放在最后表示所有腿使用同一到期日；跟在每条腿后面时，每条腿会分别匹配最接近的真实到期日。
 
 ---
 
@@ -544,4 +549,3 @@ PnL% = -300 / 500 = -60%
 
 **最后更新**: 2026 年 5 月 28 日
 **文档版本**: 1.0
-

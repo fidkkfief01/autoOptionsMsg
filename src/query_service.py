@@ -29,13 +29,23 @@ class SpreadQueryService:
     def handle_command(self, text: str) -> str:
         try:
             parsed = parse_spread_command(text, self.default_underlying)
-            expiry = resolve_expiry(parsed.underlying, parsed.target_dte)
+            expiry_by_dte = {
+                dte: resolve_expiry(parsed.underlying, dte)
+                for dte in sorted(set(parsed.leg_dtes))
+            }
             legs = [
-                leg.model_copy(update={"expiry": expiry, "underlying": parsed.underlying})
-                for leg in parsed.legs
+                leg.model_copy(
+                    update={
+                        "expiry": expiry_by_dte[dte],
+                        "underlying": parsed.underlying,
+                    }
+                )
+                for leg, dte in zip(parsed.legs, parsed.leg_dtes)
             ]
+            expiries = [leg.expiry for leg in legs]
+            expiry_label = expiries[0] if len(set(expiries)) == 1 else "多到期日"
             portfolio = OptionPortfolio(
-                name=f"{parsed.underlying} 查询 ({expiry})",
+                name=f"{parsed.underlying} 查询 ({expiry_label})",
                 multiplier=100,
                 legs=legs,
             )
@@ -57,7 +67,7 @@ class SpreadQueryService:
                 else None,
             )
 
-            header = _format_query_header(parsed, expiry)
+            header = _format_query_header(parsed, legs)
             body = self.notifier.format_snapshots([snapshot], ctx=ctx, underlying_prices={parsed.underlying: spot} if spot else {})
             return f"{header}\n\n{body}"
         except LegParseError as exc:
@@ -66,20 +76,27 @@ class SpreadQueryService:
             return _format_error(f"查询失败：{exc}")
 
 
-def _format_query_header(parsed, expiry: str) -> str:
+def _format_query_header(parsed, legs: list[OptionLeg]) -> str:
     from datetime import date
 
     today = date.today()
-    actual_dte = (date.fromisoformat(expiry) - today).days
-    legs_txt = ", ".join(
-        f"{'+' if leg.side.value == 'long' else '-'}{leg.quantity} "
-        f"{leg.strike:g}{'C' if leg.option_type.value == 'call' else 'P'}"
-        for leg in parsed.legs
-    )
+    legs_txt_parts = []
+    expiry_lines = []
+    for leg, target_dte in zip(legs, parsed.leg_dtes):
+        cp = "C" if leg.option_type.value == "call" else "P"
+        side = "+" if leg.side.value == "long" else "-"
+        actual_dte = (date.fromisoformat(leg.expiry) - today).days
+        legs_txt_parts.append(f"{side}{leg.quantity} {leg.strike:g}{cp}, {target_dte}天")
+        expiry_lines.append(
+            f"• <code>{side}{leg.quantity} {leg.strike:g}{cp}</code> → "
+            f"<code>{leg.expiry}</code>（目标 {target_dte}天 / 实际 <b>{actual_dte}</b> 天）"
+        )
+    legs_txt = ", ".join(legs_txt_parts)
+    expiry_text = "\n".join(expiry_lines)
     return (
         "🔍 <b>期权查询结果</b>\n"
-        f"输入: <code>{parsed.underlying} {legs_txt}, {parsed.target_dte}天</code>\n"
-        f"匹配到期日: <code>{expiry}</code>（实际 DTE <b>{actual_dte}</b> 天）"
+        f"输入: <code>{parsed.underlying} {legs_txt}</code>\n"
+        f"匹配到期日:\n{expiry_text}"
     )
 
 
@@ -89,6 +106,7 @@ def _format_error(message: str) -> str:
         f"{message}\n\n"
         "<b>格式示例</b>\n"
         "<code>QQQ +1 730C, -1 750C, 60天</code>\n"
+        "<code>QQQ +1 730C,59天,-1 750C,307天</code>\n"
         "<code>+1 740C, -1 760C, 45d</code>"
     )
 

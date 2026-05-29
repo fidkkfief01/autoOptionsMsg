@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 source .venv/bin/activate
 
 echo "==> 停止旧 Bot..."
-pkill -f "python main.py -c config.yaml --bot" 2>/dev/null || true
+pkill -f "main.py -c config.yaml --bot" 2>/dev/null || true
 sleep 1
 
 echo "==> 运行测试..."
@@ -27,10 +27,11 @@ echo "==> 定时推送干跑..."
 python main.py -c config.yaml --once --dry-run 2>/dev/null | grep -E "内在价值|希腊值|组合净希腊" | head -5
 
 echo "==> 启动 Bot（后台）..."
-nohup python main.py -c config.yaml --bot >> logs/bot.log 2>&1 &
-echo $! > .bot.pid
+screen -S options-bot -X quit 2>/dev/null || true
+screen -dmS options-bot /bin/zsh -lc "cd '$PWD' && .venv/bin/python main.py -c config.yaml --bot >> logs/bot.log 2>&1"
+pgrep -f "main.py -c config.yaml --bot" | head -1 > .bot.pid
 sleep 2
-if kill -0 "$(cat .bot.pid)" 2>/dev/null; then
+if screen -ls | grep -q "options-bot" && kill -0 "$(cat .bot.pid)" 2>/dev/null; then
   echo "Bot 已启动 PID=$(cat .bot.pid)"
   tail -3 logs/bot.log 2>/dev/null || true
 else
